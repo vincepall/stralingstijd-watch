@@ -1388,7 +1388,6 @@ public class MainActivity extends Activity {
                         // Last 30 seconds!
                         if (isScreenSleeping) {
                             wakeScreen();
-                            haptic(35); // Subtle tactile feedback that 30 seconds remain
                         }
                     }
 
