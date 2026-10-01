@@ -299,15 +299,7 @@ public class MainActivity extends Activity {
     }
 
     private void haptic(long ms) {
-        try {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
-                } else {
-                    vibrator.vibrate(ms);
-                }
-            }
-        } catch (Exception ignored) {}
+        // Trillingen bij scherm- en knopaanraking uitgeschakeld; alleen actief bij alarm
     }
 
     private void startAlarmVibration() {
