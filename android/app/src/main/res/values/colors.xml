@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_black">#000000</color>
+    <color name="surface_card">#181818</color>
+    <color name="surface_active">#2A2A2A</color>
+    <color name="surface_inner">#111111</color>
+    <color name="accent_yellow">#F5DF4D</color>
+    <color name="accent_dark">#242005</color>
+    <color name="text_white">#FFFFFF</color>
+    <color name="text_muted">#AAAAAA</color>
+    <color name="text_dim">#666666</color>
+    <color name="border_dark">#333333</color>
+    <color name="danger_red">#FF4444</color>
+    <color name="success_green">#00E676</color>
+</resources>
