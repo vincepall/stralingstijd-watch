@@ -1,0 +1,28 @@
+# Android build artifacts
+android/build/
+build/
+.gradle/
+*.idsig
+
+# Android SDK & Platform Tools
+tools/android-sdk/
+tools/platform-tools/
+tools/adb
+
+# IDE & Editor files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Screenshots & test captures
+screenshots/
+screen_*.png
