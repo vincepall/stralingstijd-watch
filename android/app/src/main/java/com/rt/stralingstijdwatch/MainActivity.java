@@ -196,14 +196,30 @@ public class MainActivity extends Activity {
         } else {
             currentSource = sourceList.get(0); // Manual Ir-192
         }
-        currentCi = currentSource.calculateCurrentActivity();
 
         // Load user preferences
         SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+        if (sp.contains("last_timer_source_name")) {
+            String savedName = sp.getString("last_timer_source_name", "");
+            for (SourceDb.SourceItem item : sourceList) {
+                if (item.name.equalsIgnoreCase(savedName)) {
+                    currentSource = item;
+                    break;
+                }
+            }
+        }
+        currentCi = currentSource.calculateCurrentActivity();
+
         if (sp.contains("last_timer_thickness")) {
             thickness = sp.getFloat("last_timer_thickness", (float) thickness);
             ffd = sp.getInt("last_timer_ffd", ffd);
             selectedFilm = sp.getString("last_timer_film", selectedFilm);
+        }
+        if (currentSource.isManual && sp.contains("last_timer_ci")) {
+            currentCi = sp.getFloat("last_timer_ci", (float) currentCi);
+        }
+        if (sp.contains("last_timer_factor")) {
+            materialFactor = sp.getFloat("last_timer_factor", (float) materialFactor);
         }
 
         rootFrame = new FrameLayout(this);
@@ -274,6 +290,12 @@ public class MainActivity extends Activity {
                 scheduleUserInactivityTimeout();
             }
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        saveCurrentCalculationToPrefs();
     }
 
     private void haptic(long ms) {
@@ -1442,13 +1464,22 @@ public class MainActivity extends Activity {
             ed.putLong("last_timer_seconds", seconds);
             ed.putString("last_timer_film", film);
             ed.putString("last_timer_source", currentSource != null ? currentSource.type : "Ir-192");
+            ed.putString("last_timer_source_name", currentSource != null ? currentSource.name : "");
             ed.putFloat("last_timer_thickness", (float) thickness);
             ed.putInt("last_timer_ffd", ffd);
             ed.putFloat("last_timer_ci", (float) currentCi);
+            ed.putFloat("last_timer_factor", (float) materialFactor);
             ed.apply();
 
             TileService.getUpdater(this).requestUpdate(StralingstijdTileService.class);
         } catch (Exception ignored) {}
+    }
+
+    private void saveCurrentCalculationToPrefs() {
+        if (isTimerRunning) return;
+        double sec = calculateResultSecondsForFilm(selectedFilm);
+        long timerSec = sec > 0 ? Math.round(sec) : 120;
+        saveLastUsedTimer(timerSec, selectedFilm);
     }
 
     private void handleIncomingIntent(Intent intent) {
@@ -1942,6 +1973,7 @@ public class MainActivity extends Activity {
                 selectedFilm, currentSource.type, thickness, ffd, currentCi, matInfo));
 
         updateBannerTimer();
+        saveCurrentCalculationToPrefs();
     }
 
     private double calculateResultSecondsForFilm(String film) {
