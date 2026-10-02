@@ -173,11 +173,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true);
-        } else {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
-        }
 
         // Init Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -300,6 +295,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
         saveCurrentCalculationToPrefs();
@@ -313,6 +309,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
     }
@@ -1221,7 +1218,7 @@ public class MainActivity extends Activity {
     private void wakeScreen() {
         isScreenSleeping = false;
         try {
-            if (isForeground || isAlarmRinging) {
+            if (isAlarmRinging) {
                 PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
                     PowerManager.WakeLock wl = pm.newWakeLock(
@@ -1235,9 +1232,9 @@ public class MainActivity extends Activity {
                     setTurnScreenOn(true);
                     setShowWhenLocked(true);
                 }
-                if (isForeground) {
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                }
+            }
+            if (isForeground && isTimerRunning && !isTimerPaused) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             }
         } catch (Exception ignored) {}
 
