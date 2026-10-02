@@ -1219,15 +1219,6 @@ public class MainActivity extends Activity {
         isScreenSleeping = false;
         try {
             if (isAlarmRinging) {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (pm != null) {
-                    PowerManager.WakeLock wl = pm.newWakeLock(
-                            PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                            "stralingstijd:wake_timer"
-                    );
-                    wl.acquire(1000);
-                    wl.release();
-                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     setTurnScreenOn(true);
                     setShowWhenLocked(true);
@@ -1565,6 +1556,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
         exitTimerAodMode();
@@ -1582,6 +1574,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
         setDimmedAodBrightness(false);
@@ -1610,6 +1603,13 @@ public class MainActivity extends Activity {
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(true);
+                setShowWhenLocked(true);
+            }
+        } catch (Exception ignored) {}
         wakeScreen();
         exitTimerAodMode();
         setDimmedAodBrightness(false);
@@ -1640,6 +1640,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
         if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
@@ -2152,6 +2153,7 @@ public class MainActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(false);
+                setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
         stopVibration();
