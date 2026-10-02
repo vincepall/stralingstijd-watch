@@ -142,6 +142,7 @@ public class MainActivity extends Activity {
     private boolean isTimerRunning = false;
     private boolean isTimerPaused = false;
     private boolean isAlarmRinging = false;
+    private boolean isForeground = false;
     private long timerTotalSeconds = 0;
     private long timerTargetEndTime = 0;
     private long timerRemainingSeconds = 0;
@@ -172,12 +173,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
-            setTurnScreenOn(true);
         } else {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
         }
 
         // Init Vibrator
@@ -278,6 +277,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        isForeground = true;
         if (isTimerRunning && !isTimerPaused && !isAlarmRinging) {
             long now = SystemClock.elapsedRealtime();
             long remainingMs = timerTargetEndTime - now;
@@ -295,7 +295,26 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        isForeground = false;
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
         saveCurrentCalculationToPrefs();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        isForeground = false;
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void haptic(long ms) {
@@ -1202,20 +1221,24 @@ public class MainActivity extends Activity {
     private void wakeScreen() {
         isScreenSleeping = false;
         try {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm != null) {
-                PowerManager.WakeLock wl = pm.newWakeLock(
-                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
-                        "stralingstijd:wake_timer"
-                );
-                wl.acquire(1000);
-                wl.release();
+            if (isForeground || isAlarmRinging) {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    PowerManager.WakeLock wl = pm.newWakeLock(
+                            PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                            "stralingstijd:wake_timer"
+                    );
+                    wl.acquire(1000);
+                    wl.release();
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setTurnScreenOn(true);
+                    setShowWhenLocked(true);
+                }
+                if (isForeground) {
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(true);
-                setShowWhenLocked(true);
-            }
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } catch (Exception ignored) {}
 
         if (sleepCoverView != null) {
@@ -1386,22 +1409,24 @@ public class MainActivity extends Activity {
                     timerRemainingSeconds = (remainingMs + 999) / 1000;
                     long elapsedMs = now - timerStartTime;
 
-                    // Always-on display schedule:
+                    // Always-on display schedule (only when activity is visible in foreground):
                     // 1. First 5 seconds (elapsedMs < 5000): Screen ON
                     // 2. In between (elapsedMs >= 5000 && remainingMs > 30000): Screen completely OFF (battery saver)
                     // 3. Last 30 seconds (remainingMs <= 30000): Screen ON
-                    if (elapsedMs < 5000) {
-                        if (isScreenSleeping) {
-                            wakeScreen();
-                        }
-                    } else if (remainingMs > 30000) {
-                        if (!isScreenSleeping && !isUserInteracting) {
-                            putScreenToSleep();
-                        }
-                    } else {
-                        // Last 30 seconds!
-                        if (isScreenSleeping) {
-                            wakeScreen();
+                    if (isForeground) {
+                        if (elapsedMs < 5000) {
+                            if (isScreenSleeping) {
+                                wakeScreen();
+                            }
+                        } else if (remainingMs > 30000) {
+                            if (!isScreenSleeping && !isUserInteracting) {
+                                putScreenToSleep();
+                            }
+                        } else {
+                            // Last 30 seconds!
+                            if (isScreenSleeping) {
+                                wakeScreen();
+                            }
                         }
                     }
 
@@ -1539,7 +1564,12 @@ public class MainActivity extends Activity {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
         releaseCpuWakeLock();
-        wakeScreen();
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
         exitTimerAodMode();
         setDimmedAodBrightness(false);
         stopAlarm();
@@ -1551,6 +1581,12 @@ public class MainActivity extends Activity {
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
         setDimmedAodBrightness(false);
         timerOverlay.setVisibility(View.GONE);
         updateBannerTimer();
@@ -1588,6 +1624,14 @@ public class MainActivity extends Activity {
         timerOverlay.setVisibility(View.VISIBLE);
         layoutAlarmBanner.setVisibility(View.VISIBLE);
 
+        if (!isForeground) {
+            try {
+                Intent intent = new Intent(this, MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivity(intent);
+            } catch (Exception ignored) {}
+        }
+
         startAlarmVibration();
     }
 
@@ -1595,7 +1639,12 @@ public class MainActivity extends Activity {
         isAlarmRinging = false;
         stopVibration();
         releaseCpuWakeLock();
-        wakeScreen();
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
         if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
 
         // Automatisch resetten naar de oorspronkelijke ingestelde tijd
@@ -2101,10 +2150,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        isForeground = false;
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(false);
+            }
+        } catch (Exception ignored) {}
         stopVibration();
         releaseCpuWakeLock();
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
+        }
+        if (aodHideHandler != null && aodHideRunnable != null) {
+            aodHideHandler.removeCallbacks(aodHideRunnable);
         }
     }
 
