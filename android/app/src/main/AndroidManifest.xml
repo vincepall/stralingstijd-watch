@@ -14,6 +14,10 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -50,5 +54,14 @@
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".TimerAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.rt.stralingstijdwatch.ACTION_TIMER_ALARM" />
+                <action android:name="com.rt.stralingstijdwatch.ACTION_STOP_ALARM" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

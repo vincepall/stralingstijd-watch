@@ -1,7 +1,12 @@
 package com.rt.stralingstijdwatch;
 
 import android.app.Activity;
+import android.app.AlarmManager;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -127,13 +132,14 @@ public class MainActivity extends Activity {
 
     // AOD & Battery Saver Timer State
     private boolean isTimerAodMode = true;
-    private boolean isScreenSleeping = false;
     private boolean isUserInteracting = false;
     private long timerStartTime = 0;
     private PowerManager.WakeLock cpuWakeLock;
-    private View sleepCoverView;
     private Handler aodHideHandler = new Handler(Looper.getMainLooper());
     private Runnable aodHideRunnable;
+
+    private static final String CHANNEL_TIMER_ID = "stralingstijd_timer_channel";
+    private static final int NOTIF_TIMER_ID = 2000;
 
     // Alarm UI Views
     private LinearLayout layoutAlarmBanner;
@@ -259,6 +265,7 @@ public class MainActivity extends Activity {
             double initialSec = calculateResultSecondsForFilm(selectedFilm);
             saveLastUsedTimer(initialSec > 0 ? Math.round(initialSec) : 120, selectedFilm);
         }
+        checkAndRestoreTimer();
         handleIncomingIntent(getIntent());
     }
 
@@ -273,31 +280,22 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         isForeground = true;
-        if (isTimerRunning && !isTimerPaused && !isAlarmRinging) {
-            long now = SystemClock.elapsedRealtime();
-            long remainingMs = timerTargetEndTime - now;
-            long elapsedMs = now - timerStartTime;
-            if (elapsedMs < 5000 || remainingMs <= 30000) {
-                wakeScreen();
-            } else {
-                wakeScreen();
-                isUserInteracting = true;
-                scheduleUserInactivityTimeout();
-            }
-        }
+        checkAndRestoreTimer();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         isForeground = false;
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(false);
-                setShowWhenLocked(false);
-            }
-        } catch (Exception ignored) {}
+        if (!isTimerRunning && !isAlarmRinging) {
+            try {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setTurnScreenOn(false);
+                    setShowWhenLocked(false);
+                }
+            } catch (Exception ignored) {}
+        }
         saveCurrentCalculationToPrefs();
     }
 
@@ -305,13 +303,15 @@ public class MainActivity extends Activity {
     protected void onStop() {
         super.onStop();
         isForeground = false;
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(false);
-                setShowWhenLocked(false);
-            }
-        } catch (Exception ignored) {}
+        if (!isTimerRunning && !isAlarmRinging) {
+            try {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setTurnScreenOn(false);
+                    setShowWhenLocked(false);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     private void haptic(long ms) {
@@ -1034,6 +1034,12 @@ public class MainActivity extends Activity {
                 stopAlarm();
             }
         });
+        layoutAlarmBanner.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                haptic(30);
+                stopAlarm();
+            }
+        });
         layoutAlarmBanner.addView(btnStopAlarm);
         timerOverlayContent.addView(layoutAlarmBanner);
 
@@ -1158,24 +1164,6 @@ public class MainActivity extends Activity {
 
         overlay.addView(timerOverlayContent);
 
-        sleepCoverView = new View(this);
-        sleepCoverView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        sleepCoverView.setBackgroundColor(COLOR_BG);
-        sleepCoverView.setClickable(true);
-        sleepCoverView.setFocusable(true);
-        sleepCoverView.setVisibility(View.GONE);
-        sleepCoverView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    onTimerOverlayClicked();
-                    return true;
-                }
-                return false;
-            }
-        });
-        overlay.addView(sleepCoverView);
-
         return overlay;
     }
 
@@ -1197,26 +1185,9 @@ public class MainActivity extends Activity {
     }
 
     // =========================================================================
-    // AOD & BATTERY SAVER TIMER ENGINE
+    // AOD & RELIABLE TIMER ENGINE
     // =========================================================================
-    private void putScreenToSleep() {
-        if (!isTimerRunning || isTimerPaused || isAlarmRinging) return;
-        isScreenSleeping = true;
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        } catch (Exception ignored) {}
-
-        if (sleepCoverView != null) {
-            sleepCoverView.setVisibility(View.VISIBLE);
-            sleepCoverView.bringToFront();
-        }
-        if (timerOverlayContent != null) {
-            timerOverlayContent.setVisibility(View.INVISIBLE);
-        }
-    }
-
     private void wakeScreen() {
-        isScreenSleeping = false;
         try {
             if (isAlarmRinging) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -1229,9 +1200,6 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
 
-        if (sleepCoverView != null) {
-            sleepCoverView.setVisibility(View.GONE);
-        }
         if (timerOverlayContent != null) {
             timerOverlayContent.setVisibility(View.VISIBLE);
         }
@@ -1247,7 +1215,7 @@ public class MainActivity extends Activity {
                 }
             }
             if (cpuWakeLock != null && !cpuWakeLock.isHeld()) {
-                cpuWakeLock.acquire((timerTotalSeconds + 60) * 1000L);
+                cpuWakeLock.acquire((timerTotalSeconds + 120) * 1000L);
             }
         } catch (Exception ignored) {}
     }
@@ -1260,6 +1228,207 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void scheduleAlarmManager(long targetEndTimeMs) {
+        try {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+
+            Intent intent = new Intent(this, TimerAlarmReceiver.class);
+            intent.setAction(TimerAlarmReceiver.ACTION_TIMER_ALARM);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getBroadcast(this, 1001, intent, flags);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, targetEndTimeMs, pi);
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, targetEndTimeMs, pi);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void cancelAlarmManager() {
+        try {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+
+            Intent intent = new Intent(this, TimerAlarmReceiver.class);
+            intent.setAction(TimerAlarmReceiver.ACTION_TIMER_ALARM);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getBroadcast(this, 1001, intent, flags);
+            am.cancel(pi);
+        } catch (Exception ignored) {}
+    }
+
+    private void showOngoingTimerNotification() {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                        CHANNEL_TIMER_ID,
+                        "Lopende Timer",
+                        NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Stralingstijd actieve timer");
+                channel.setShowBadge(false);
+                nm.createNotificationChannel(channel);
+            }
+
+            Intent openIntent = new Intent(this, MainActivity.class);
+            openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getActivity(this, 1004, openIntent, flags);
+
+            long m = timerRemainingSeconds / 60;
+            long s = timerRemainingSeconds % 60;
+            String timeText = String.format(Locale.US, "%02d:%02d", m, s);
+
+            Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    ? new Notification.Builder(this, CHANNEL_TIMER_ID)
+                    : new Notification.Builder(this);
+
+            builder.setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle("⏱ Timer: " + timerFilmName + " (" + timeText + ")")
+                    .setContentText("Stralingstijd opname loopt door")
+                    .setContentIntent(pi)
+                    .setOngoing(true);
+
+            nm.notify(NOTIF_TIMER_ID, builder.build());
+        } catch (Exception ignored) {}
+    }
+
+    private void cancelAllNotifications() {
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                nm.cancel(NOTIF_TIMER_ID);
+                nm.cancel(TimerAlarmReceiver.NOTIFICATION_ID);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveActiveTimerToPrefs(boolean active, boolean paused, long endMs, long totalSec, long remainingSec, String film) {
+        try {
+            SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+            SharedPreferences.Editor ed = sp.edit();
+            ed.putBoolean("active_timer_running", active);
+            ed.putBoolean("active_timer_paused", paused);
+            ed.putLong("active_timer_end_time_ms", endMs);
+            ed.putLong("active_timer_total_seconds", totalSec);
+            ed.putLong("active_timer_remaining_seconds", remainingSec);
+            ed.putString("active_timer_film", film);
+            ed.putString("active_timer_source_name", currentSource != null ? currentSource.name : "");
+            ed.putFloat("active_timer_thickness", (float) thickness);
+            ed.putInt("active_timer_ffd", ffd);
+            ed.putFloat("active_timer_ci", (float) currentCi);
+            ed.putFloat("active_timer_factor", (float) materialFactor);
+            ed.apply();
+        } catch (Exception ignored) {}
+    }
+
+    private void clearActiveTimerFromPrefs() {
+        try {
+            SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+            SharedPreferences.Editor ed = sp.edit();
+            ed.putBoolean("active_timer_running", false);
+            ed.putBoolean("active_timer_paused", false);
+            ed.remove("active_timer_end_time_ms");
+            ed.remove("active_timer_remaining_seconds");
+            ed.apply();
+        } catch (Exception ignored) {}
+    }
+
+    private void checkAndRestoreTimer() {
+        SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+        boolean isActive = sp.getBoolean("active_timer_running", false);
+        if (!isActive) {
+            if (isAlarmRinging) {
+                openTimerOverlay();
+            } else {
+                updateBannerTimer();
+            }
+            return;
+        }
+
+        boolean isPaused = sp.getBoolean("active_timer_paused", false);
+        timerTotalSeconds = sp.getLong("active_timer_total_seconds", 120);
+        timerFilmName = sp.getString("active_timer_film", "D4");
+
+        if (sp.contains("active_timer_source_name")) {
+            String sName = sp.getString("active_timer_source_name", "");
+            for (SourceDb.SourceItem item : sourceList) {
+                if (item.name.equalsIgnoreCase(sName)) {
+                    currentSource = item;
+                    break;
+                }
+            }
+        }
+        thickness = sp.getFloat("active_timer_thickness", (float) thickness);
+        ffd = sp.getInt("active_timer_ffd", ffd);
+        currentCi = sp.getFloat("active_timer_ci", (float) currentCi);
+        materialFactor = sp.getFloat("active_timer_factor", (float) materialFactor);
+
+        if (isPaused) {
+            timerRemainingSeconds = sp.getLong("active_timer_remaining_seconds", timerTotalSeconds);
+            isTimerRunning = true;
+            isTimerPaused = true;
+            btnTimerPause.setText("HERVAT");
+            btnTimerPause.setBackgroundResource(R.drawable.btn_key_confirm);
+            btnTimerPause.setTextColor(0xFF000000);
+            openTimerOverlay();
+            exitTimerAodMode();
+            updateTimerUI();
+            updateBannerTimer();
+            return;
+        }
+
+        long endMs = sp.getLong("active_timer_end_time_ms", 0);
+        long now = System.currentTimeMillis();
+        long remainingMs = endMs - now;
+
+        if (remainingMs <= 0) {
+            // Timer verstreken terwijl app niet actief was
+            timerRemainingSeconds = 0;
+            isTimerRunning = false;
+            isTimerPaused = false;
+            openTimerOverlay();
+            onTimerFinished();
+        } else {
+            // Timer loopt nog
+            timerRemainingSeconds = (remainingMs + 999) / 1000;
+            timerStartTime = SystemClock.elapsedRealtime() - ((timerTotalSeconds - timerRemainingSeconds) * 1000L);
+            timerTargetEndTime = SystemClock.elapsedRealtime() + remainingMs;
+            isTimerRunning = true;
+            isTimerPaused = false;
+
+            acquireCpuWakeLock();
+            wakeScreen();
+
+            btnTimerPause.setText("PAUZE");
+            btnTimerPause.setBackgroundResource(R.drawable.btn_timer_start);
+            btnTimerPause.setTextColor(0xFF000000);
+
+            timerHandler.removeCallbacks(timerRunnable);
+            timerHandler.post(timerRunnable);
+
+            openTimerOverlay();
+            enterTimerAodMode();
+            updateTimerUI();
+            updateBannerTimer();
+            scheduleUserInactivityTimeout();
+        }
+    }
+
     private void scheduleUserInactivityTimeout() {
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
@@ -1268,27 +1437,18 @@ public class MainActivity extends Activity {
     }
 
     private void onTimerOverlayClicked() {
-        if (isAlarmRinging) return;
+        if (isAlarmRinging) {
+            stopAlarm();
+            return;
+        }
         haptic(15);
-        if (isScreenSleeping) {
-            wakeScreen();
-            isUserInteracting = true;
-            exitTimerAodMode();
-            scheduleUserInactivityTimeout();
-        } else if (isTimerAodMode) {
+        if (isTimerAodMode) {
             isUserInteracting = true;
             exitTimerAodMode();
             scheduleUserInactivityTimeout();
         } else {
             isUserInteracting = false;
-            long now = SystemClock.elapsedRealtime();
-            long remainingMs = timerTargetEndTime - now;
-            long elapsedMs = now - timerStartTime;
-            if (elapsedMs >= 5000 && remainingMs > 30000) {
-                putScreenToSleep();
-            } else {
-                enterTimerAodMode();
-            }
+            enterTimerAodMode();
         }
     }
 
@@ -1297,14 +1457,7 @@ public class MainActivity extends Activity {
             @Override public void run() {
                 isUserInteracting = false;
                 if (isTimerRunning && !isTimerPaused && !isAlarmRinging) {
-                    long now = SystemClock.elapsedRealtime();
-                    long remainingMs = timerTargetEndTime - now;
-                    long elapsedMs = now - timerStartTime;
-                    if (elapsedMs >= 5000 && remainingMs > 30000) {
-                        putScreenToSleep();
-                    } else {
-                        enterTimerAodMode();
-                    }
+                    enterTimerAodMode();
                 }
             }
         };
@@ -1363,7 +1516,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        // Auto-hide back to AOD or Sleep after 5 seconds of inactivity
+        // Automatisch terug naar gedimde weergave na 5 seconden inactiviteit
         scheduleUserInactivityTimeout();
     }
 
@@ -1395,32 +1548,18 @@ public class MainActivity extends Activity {
                     onTimerFinished();
                 } else {
                     timerRemainingSeconds = (remainingMs + 999) / 1000;
-                    long elapsedMs = now - timerStartTime;
 
-                    // Always-on display schedule (only when activity is visible in foreground):
-                    // 1. First 5 seconds (elapsedMs < 5000): Screen ON
-                    // 2. In between (elapsedMs >= 5000 && remainingMs > 30000): Screen completely OFF (battery saver)
-                    // 3. Last 30 seconds (remainingMs <= 30000): Screen ON
+                    // Scherm actief houden zolang de timer loopt!
                     if (isForeground) {
-                        if (elapsedMs < 5000) {
-                            if (isScreenSleeping) {
-                                wakeScreen();
-                            }
-                        } else if (remainingMs > 30000) {
-                            if (!isScreenSleeping && !isUserInteracting) {
-                                putScreenToSleep();
-                            }
-                        } else {
-                            // Last 30 seconds!
-                            if (isScreenSleeping) {
-                                wakeScreen();
-                            }
+                        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        if (remainingMs <= 30000 && isTimerAodMode) {
+                            exitTimerAodMode();
                         }
                     }
 
                     updateTimerUI();
                     updateBannerTimer();
-                    timerHandler.postDelayed(this, 500); // Check twice a second for precision
+                    timerHandler.postDelayed(this, 500); // Twee keer per seconde controleren
                 }
             }
         };
@@ -1438,19 +1577,25 @@ public class MainActivity extends Activity {
         timerTotalSeconds = seconds;
         timerRemainingSeconds = timerTotalSeconds;
         timerStartTime = SystemClock.elapsedRealtime();
-        timerTargetEndTime = timerStartTime + (timerTotalSeconds * 1000);
+        timerTargetEndTime = timerStartTime + (timerTotalSeconds * 1000L);
+        long nowMs = System.currentTimeMillis();
+        long targetEndTimeMs = nowMs + (timerTotalSeconds * 1000L);
+
         isTimerRunning = true;
         isTimerPaused = false;
         isAlarmRinging = false;
-        isScreenSleeping = false;
         isUserInteracting = false;
 
+        saveActiveTimerToPrefs(true, false, targetEndTimeMs, timerTotalSeconds, timerRemainingSeconds, timerFilmName);
         saveLastUsedTimer(timerTotalSeconds, timerFilmName);
+        scheduleAlarmManager(targetEndTimeMs);
+        showOngoingTimerNotification();
+
         acquireCpuWakeLock();
         wakeScreen();
         enterTimerAodMode();
 
-        layoutAlarmBanner.setVisibility(View.GONE);
+        if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
         btnTimerPause.setText("PAUZE");
         btnTimerPause.setBackgroundResource(R.drawable.btn_timer_start);
         btnTimerPause.setTextColor(0xFF000000);
@@ -1488,7 +1633,17 @@ public class MainActivity extends Activity {
     }
 
     private void handleIncomingIntent(Intent intent) {
-        if (intent != null && "start_timer".equals(intent.getStringExtra("action"))) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (TimerAlarmReceiver.ACTION_STOP_ALARM.equals(action)) {
+            stopAlarm();
+            return;
+        }
+        if (TimerAlarmReceiver.ACTION_TIMER_ALARM.equals(action)) {
+            checkAndRestoreTimer();
+            return;
+        }
+        if ("start_timer".equals(intent.getStringExtra("action"))) {
             intent.removeExtra("action");
             if (isTimerRunning) {
                 openTimerOverlay();
@@ -1512,9 +1667,15 @@ public class MainActivity extends Activity {
         if (isTimerPaused) {
             // Resume
             isTimerPaused = false;
-            timerStartTime = SystemClock.elapsedRealtime(); // Reset start window so 5s on screen is granted
-            isUserInteracting = false;
-            timerTargetEndTime = timerStartTime + (timerRemainingSeconds * 1000);
+            timerStartTime = SystemClock.elapsedRealtime();
+            timerTargetEndTime = timerStartTime + (timerRemainingSeconds * 1000L);
+            long nowMs = System.currentTimeMillis();
+            long targetEndTimeMs = nowMs + (timerRemainingSeconds * 1000L);
+
+            saveActiveTimerToPrefs(true, false, targetEndTimeMs, timerTotalSeconds, timerRemainingSeconds, timerFilmName);
+            scheduleAlarmManager(targetEndTimeMs);
+            showOngoingTimerNotification();
+
             btnTimerPause.setText("PAUZE");
             btnTimerPause.setBackgroundResource(R.drawable.btn_timer_start);
             btnTimerPause.setTextColor(0xFF000000);
@@ -1527,11 +1688,16 @@ public class MainActivity extends Activity {
             isTimerPaused = true;
             long now = SystemClock.elapsedRealtime();
             timerRemainingSeconds = Math.max(0, (timerTargetEndTime - now + 999) / 1000);
+
+            cancelAlarmManager();
+            saveActiveTimerToPrefs(true, true, 0, timerTotalSeconds, timerRemainingSeconds, timerFilmName);
+            showOngoingTimerNotification();
+
             btnTimerPause.setText("HERVAT");
             btnTimerPause.setBackgroundResource(R.drawable.btn_key_confirm);
             btnTimerPause.setTextColor(0xFF000000);
             timerHandler.removeCallbacks(timerRunnable);
-            // Keep controls visible & screen awake when paused
+
             wakeScreen();
             exitTimerAodMode();
             if (aodHideHandler != null && aodHideRunnable != null) {
@@ -1542,41 +1708,20 @@ public class MainActivity extends Activity {
         updateBannerTimer();
     }
 
-
     private void stopTimer() {
-        isTimerRunning = false;
-        isTimerPaused = false;
-        timerRemainingSeconds = 0;
-        timerHandler.removeCallbacks(timerRunnable);
+        if (timerHandler != null && timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
-        releaseCpuWakeLock();
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(false);
-                setShowWhenLocked(false);
-            }
-        } catch (Exception ignored) {}
-        exitTimerAodMode();
-        setDimmedAodBrightness(false);
         stopAlarm();
-        timerOverlay.setVisibility(View.GONE);
-        updateAllUI();
     }
 
     private void minimizeTimer() {
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(false);
-                setShowWhenLocked(false);
-            }
-        } catch (Exception ignored) {}
         setDimmedAodBrightness(false);
         timerOverlay.setVisibility(View.GONE);
         updateBannerTimer();
@@ -1587,11 +1732,10 @@ public class MainActivity extends Activity {
 
     private void openTimerOverlay() {
         timerOverlay.setVisibility(View.VISIBLE);
+        wakeScreen();
         if (isTimerRunning && !isTimerPaused && !isAlarmRinging) {
-            wakeScreen();
             enterTimerAodMode();
         } else {
-            wakeScreen();
             exitTimerAodMode();
         }
         updateTimerUI();
@@ -1599,17 +1743,23 @@ public class MainActivity extends Activity {
 
     private void onTimerFinished() {
         isAlarmRinging = true;
-        releaseCpuWakeLock();
+        isTimerRunning = false;
+        timerRemainingSeconds = 0;
+
+        cancelAlarmManager();
+        cancelAllNotifications();
+
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
         }
         try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setTurnScreenOn(true);
                 setShowWhenLocked(true);
             }
         } catch (Exception ignored) {}
+
         wakeScreen();
         exitTimerAodMode();
         setDimmedAodBrightness(false);
@@ -1617,13 +1767,15 @@ public class MainActivity extends Activity {
         updateTimerUI();
         updateBannerTimer();
 
-        // Make sure overlay is visible so user sees it
         timerOverlay.setVisibility(View.VISIBLE);
-        layoutAlarmBanner.setVisibility(View.VISIBLE);
+        if (layoutAlarmBanner != null) {
+            layoutAlarmBanner.setVisibility(View.VISIBLE);
+        }
 
         if (!isForeground) {
             try {
                 Intent intent = new Intent(this, MainActivity.class);
+                intent.setAction(TimerAlarmReceiver.ACTION_TIMER_ALARM);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 startActivity(intent);
             } catch (Exception ignored) {}
@@ -1636,6 +1788,10 @@ public class MainActivity extends Activity {
         isAlarmRinging = false;
         stopVibration();
         releaseCpuWakeLock();
+        cancelAlarmManager();
+        cancelAllNotifications();
+        clearActiveTimerFromPrefs();
+
         try {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -1643,9 +1799,10 @@ public class MainActivity extends Activity {
                 setShowWhenLocked(false);
             }
         } catch (Exception ignored) {}
+
         if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
 
-        // Automatisch resetten naar de oorspronkelijke ingestelde tijd
+        // Volledig en automatisch resetten naar de oorspronkelijke ingestelde tijd
         isTimerRunning = false;
         isTimerPaused = false;
         timerRemainingSeconds = timerTotalSeconds;
@@ -1656,7 +1813,12 @@ public class MainActivity extends Activity {
         exitTimerAodMode();
         setDimmedAodBrightness(false);
 
-        updateTimerUI();
+        // Sluit het timer overlay venster direct zodat gebruiker terug is op hoofdscherm
+        if (timerOverlay != null) {
+            timerOverlay.setVisibility(View.GONE);
+        }
+
+        updateAllUI();
         updateBannerTimer();
     }
 
@@ -2069,14 +2231,6 @@ public class MainActivity extends Activity {
             float delta = -event.getAxisValue(MotionEvent.AXIS_SCROLL);
             if (delta != 0) {
                 if (timerOverlay != null && timerOverlay.getVisibility() == View.VISIBLE) {
-                    if (isScreenSleeping) {
-                        wakeScreen();
-                        isUserInteracting = true;
-                        exitTimerAodMode();
-                        scheduleUserInactivityTimeout();
-                        haptic(10);
-                        return true;
-                    }
                     if (isTimerAodMode) {
                         isUserInteracting = true;
                         exitTimerAodMode();
@@ -2111,14 +2265,11 @@ public class MainActivity extends Activity {
             numpadOverlay.setVisibility(View.GONE);
             return;
         }
+        if (isAlarmRinging) {
+            stopAlarm();
+            return;
+        }
         if (timerOverlay != null && timerOverlay.getVisibility() == View.VISIBLE) {
-            if (isScreenSleeping) {
-                wakeScreen();
-                isUserInteracting = true;
-                exitTimerAodMode();
-                scheduleUserInactivityTimeout();
-                return;
-            }
             if (isTimerAodMode) {
                 exitTimerAodMode();
                 return;
@@ -2134,14 +2285,6 @@ public class MainActivity extends Activity {
             sourcePickerOverlay.setVisibility(View.GONE);
             return;
         }
-        if (isAlarmRinging) {
-            stopAlarm();
-            return;
-        }
-        if (timerOverlay != null && timerOverlay.getVisibility() == View.VISIBLE) {
-            minimizeTimer();
-            return;
-        }
         super.onBackPressed();
     }
 
@@ -2149,15 +2292,19 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         isForeground = false;
-        try {
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setTurnScreenOn(false);
-                setShowWhenLocked(false);
-            }
-        } catch (Exception ignored) {}
-        stopVibration();
-        releaseCpuWakeLock();
+        if (!isTimerRunning && !isAlarmRinging) {
+            try {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setTurnScreenOn(false);
+                    setShowWhenLocked(false);
+                }
+            } catch (Exception ignored) {}
+            releaseCpuWakeLock();
+        }
+        if (isAlarmRinging) {
+            stopVibration();
+        }
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
         }
