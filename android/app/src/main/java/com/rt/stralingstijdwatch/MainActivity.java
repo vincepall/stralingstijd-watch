@@ -141,9 +141,9 @@ public class MainActivity extends Activity {
     private static final String CHANNEL_TIMER_ID = "stralingstijd_timer_channel";
     private static final int NOTIF_TIMER_ID = 2000;
 
-    // Alarm UI Views
-    private LinearLayout layoutAlarmBanner;
-    private TextView btnStopAlarm;
+    // Alarm Fullscreen Overlay Views
+    private FrameLayout alarmOverlay;
+    private TextView btnAlarmStop;
 
     private boolean isTimerRunning = false;
     private boolean isTimerPaused = false;
@@ -254,6 +254,11 @@ public class MainActivity extends Activity {
         materialPickerOverlay.setVisibility(View.GONE);
         rootFrame.addView(materialPickerOverlay);
 
+        // 6. Fullscreen High-Priority Red Alarm Overlay ("Belichting beeindigen!")
+        alarmOverlay = buildFullscreenAlarmOverlay();
+        alarmOverlay.setVisibility(View.GONE);
+        rootFrame.addView(alarmOverlay);
+
         setContentView(rootFrame);
 
         setupTimerRunnable();
@@ -280,13 +285,19 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         isForeground = true;
-        checkAndRestoreTimer();
+        if (AlarmHelper.isAlarmRinging() || isAlarmRinging) {
+            onTimerFinished();
+        } else {
+            checkAndRestoreTimer();
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         isForeground = false;
+        // NIET het alarm stoppen bij palm-to-dim of scherm dimmen!
+        // De gebruiker moet expliciet op het scherm / de knop drukken om het alarm uit te schakelen.
         if (!isTimerRunning && !isAlarmRinging) {
             try {
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -303,7 +314,11 @@ public class MainActivity extends Activity {
     protected void onStop() {
         super.onStop();
         isForeground = false;
-        if (!isTimerRunning && !isAlarmRinging) {
+        // Als de app wordt weggeveegd (gestopt) door de gebruiker terwijl het alarm afgaat,
+        // stop dan ook direct het alarm en de trillingen!
+        if (isAlarmRinging || AlarmHelper.isAlarmRinging()) {
+            stopAlarm();
+        } else if (!isTimerRunning) {
             try {
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -990,48 +1005,6 @@ public class MainActivity extends Activity {
         timerOverlayContent.setPadding(dp(10), dp(8), dp(10), dp(8));
         timerOverlayContent.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // 1. Alarm Banner (Flashing when time up)
-        layoutAlarmBanner = new LinearLayout(this);
-        layoutAlarmBanner.setOrientation(LinearLayout.VERTICAL);
-        layoutAlarmBanner.setGravity(Gravity.CENTER);
-        layoutAlarmBanner.setBackgroundColor(0xFFCC0000);
-        layoutAlarmBanner.setPadding(dp(6), dp(4), dp(6), dp(4));
-        layoutAlarmBanner.setVisibility(View.GONE);
-
-        TextView txtAlarm = new TextView(this);
-        txtAlarm.setText("⚠ TIJD VERSTREKEN! ⚠");
-        txtAlarm.setTextSize(11);
-        txtAlarm.setTextColor(0xFFFFFFFF);
-        txtAlarm.setTypeface(Typeface.DEFAULT_BOLD);
-        txtAlarm.setGravity(Gravity.CENTER);
-        layoutAlarmBanner.addView(txtAlarm);
-
-        btnStopAlarm = new TextView(this);
-        btnStopAlarm.setText("STOP ALARM");
-        btnStopAlarm.setTextSize(12);
-        btnStopAlarm.setTextColor(0xFF000000);
-        btnStopAlarm.setTypeface(Typeface.DEFAULT_BOLD);
-        btnStopAlarm.setGravity(Gravity.CENTER);
-        btnStopAlarm.setBackgroundResource(R.drawable.btn_timer_start);
-        btnStopAlarm.setPadding(dp(12), dp(4), dp(12), dp(4));
-        LinearLayout.LayoutParams saLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        saLp.topMargin = dp(3);
-        btnStopAlarm.setLayoutParams(saLp);
-        btnStopAlarm.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                haptic(30);
-                stopAlarm();
-            }
-        });
-        layoutAlarmBanner.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                haptic(30);
-                stopAlarm();
-            }
-        });
-        layoutAlarmBanner.addView(btnStopAlarm);
-        timerOverlayContent.addView(layoutAlarmBanner);
-
         // 2. Controls Top (Header & SubInfo - hidden in AOD mode)
         timerControlsTop = new LinearLayout(this);
         timerControlsTop.setOrientation(LinearLayout.VERTICAL);
@@ -1171,6 +1144,88 @@ public class MainActivity extends Activity {
         tv.setLayoutParams(lp);
         tv.setOnClickListener(onClick);
         return tv;
+    }
+
+    // =========================================================================
+    // FULLSCREEN HIGH-PRIORITY RED ALARM OVERLAY
+    // =========================================================================
+    private FrameLayout buildFullscreenAlarmOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundResource(R.drawable.bg_alarm_screen);
+        overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER);
+        content.setPadding(dp(16), dp(20), dp(16), dp(20));
+        content.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // 1. Warning icon / headline
+        TextView txtWarning = new TextView(this);
+        txtWarning.setText("⚠ ⚠ ⚠");
+        txtWarning.setTextSize(16);
+        txtWarning.setTextColor(0xFFFFFFFF);
+        txtWarning.setTypeface(Typeface.DEFAULT_BOLD);
+        txtWarning.setGravity(Gravity.CENTER);
+        content.addView(txtWarning);
+
+        addSpace(content, dp(4));
+
+        // 2. Primary Alarm Message: "Belichting beeindigen!"
+        TextView txtTitle = new TextView(this);
+        txtTitle.setText("Belichting beeindigen!");
+        txtTitle.setTextSize(17);
+        txtTitle.setTextColor(0xFFFFFFFF);
+        txtTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        txtTitle.setGravity(Gravity.CENTER);
+        content.addView(txtTitle);
+
+        addSpace(content, dp(4));
+
+        // 3. Subtext
+        TextView txtSub = new TextView(this);
+        txtSub.setText("Bron inveiligen!");
+        txtSub.setTextSize(12);
+        txtSub.setTextColor(0xFFFFCDD2);
+        txtSub.setTypeface(Typeface.DEFAULT_BOLD);
+        txtSub.setGravity(Gravity.CENTER);
+        content.addView(txtSub);
+
+        addSpace(content, dp(14));
+
+        // 4. Large prominent white STOP ALARM button
+        btnAlarmStop = new TextView(this);
+        btnAlarmStop.setText("STOP ALARM");
+        btnAlarmStop.setTextSize(15);
+        btnAlarmStop.setTextColor(0xFFB71C1C); // Bold red text on white pill button
+        btnAlarmStop.setTypeface(Typeface.DEFAULT_BOLD);
+        btnAlarmStop.setGravity(Gravity.CENTER);
+        btnAlarmStop.setBackgroundResource(R.drawable.btn_alarm_stop_white);
+        btnAlarmStop.setPadding(dp(24), dp(10), dp(24), dp(10));
+        btnAlarmStop.setClickable(true);
+        btnAlarmStop.setFocusable(true);
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnAlarmStop.setLayoutParams(btnLp);
+        btnAlarmStop.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                haptic(30);
+                stopAlarm();
+            }
+        });
+        content.addView(btnAlarmStop);
+
+        // Tikken op het rode scherm stopt ook direct het alarm
+        View.OnClickListener stopClick = new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                haptic(30);
+                stopAlarm();
+            }
+        };
+        overlay.setOnClickListener(stopClick);
+        content.setOnClickListener(stopClick);
+
+        overlay.addView(content);
+        return overlay;
     }
 
     // =========================================================================
@@ -1387,11 +1442,14 @@ public class MainActivity extends Activity {
 
         if (remainingMs <= 0) {
             // Timer verstreken terwijl app niet actief was
+            clearActiveTimerFromPrefs();
             timerRemainingSeconds = 0;
             isTimerRunning = false;
             isTimerPaused = false;
-            openTimerOverlay();
-            onTimerFinished();
+            if (!isAlarmRinging) {
+                openTimerOverlay();
+                onTimerFinished();
+            }
         } else {
             // Timer loopt nog
             timerRemainingSeconds = (remainingMs + 999) / 1000;
@@ -1541,9 +1599,6 @@ public class MainActivity extends Activity {
                     // Scherm actief houden zolang de timer loopt!
                     if (isForeground) {
                         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                        if (remainingMs <= 30000 && isTimerAodMode) {
-                            exitTimerAodMode();
-                        }
                     }
 
                     updateTimerUI();
@@ -1584,7 +1639,7 @@ public class MainActivity extends Activity {
         wakeScreen();
         enterTimerAodMode();
 
-        if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
+        if (alarmOverlay != null) alarmOverlay.setVisibility(View.GONE);
         btnTimerPause.setText("PAUZE");
         btnTimerPause.setBackgroundResource(R.drawable.btn_timer_start);
         btnTimerPause.setTextColor(0xFF000000);
@@ -1629,7 +1684,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (TimerAlarmReceiver.ACTION_TIMER_ALARM.equals(action)) {
-            checkAndRestoreTimer();
+            onTimerFinished();
             return;
         }
         if ("start_timer".equals(intent.getStringExtra("action"))) {
@@ -1731,12 +1786,17 @@ public class MainActivity extends Activity {
     }
 
     private void onTimerFinished() {
+        if (isAlarmRinging) {
+            if (alarmOverlay != null) alarmOverlay.setVisibility(View.VISIBLE);
+            return;
+        }
         isAlarmRinging = true;
         isTimerRunning = false;
         timerRemainingSeconds = 0;
 
         cancelAlarmManager();
         cancelAllNotifications();
+        clearActiveTimerFromPrefs();
 
         if (aodHideHandler != null && aodHideRunnable != null) {
             aodHideHandler.removeCallbacks(aodHideRunnable);
@@ -1756,18 +1816,13 @@ public class MainActivity extends Activity {
         updateTimerUI();
         updateBannerTimer();
 
-        timerOverlay.setVisibility(View.VISIBLE);
-        if (layoutAlarmBanner != null) {
-            layoutAlarmBanner.setVisibility(View.VISIBLE);
+        // Verberg timerOverlay en toon het dedicated rood scherm
+        if (timerOverlay != null) {
+            timerOverlay.setVisibility(View.GONE);
         }
-
-        if (!isForeground) {
-            try {
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.setAction(TimerAlarmReceiver.ACTION_TIMER_ALARM);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(intent);
-            } catch (Exception ignored) {}
+        if (alarmOverlay != null) {
+            alarmOverlay.setVisibility(View.VISIBLE);
+            alarmOverlay.bringToFront();
         }
 
         startAlarmVibration();
@@ -1789,7 +1844,9 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
 
-        if (layoutAlarmBanner != null) layoutAlarmBanner.setVisibility(View.GONE);
+        if (alarmOverlay != null) {
+            alarmOverlay.setVisibility(View.GONE);
+        }
 
         // Volledig en automatisch resetten naar de oorspronkelijke ingestelde tijd
         isTimerRunning = false;
@@ -2291,8 +2348,8 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {}
             releaseCpuWakeLock();
         }
-        if (isAlarmRinging) {
-            stopVibration();
+        if (isAlarmRinging || AlarmHelper.isAlarmRinging()) {
+            stopAlarm();
         }
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
