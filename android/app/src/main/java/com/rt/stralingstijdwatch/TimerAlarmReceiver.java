@@ -23,6 +23,7 @@ public class TimerAlarmReceiver extends BroadcastReceiver {
 
         if (ACTION_STOP_ALARM.equals(action)) {
             // Stop alarm action
+            AlarmHelper.stopAlarm(context);
             NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.cancel(NOTIFICATION_ID);
@@ -33,6 +34,9 @@ public class TimerAlarmReceiver extends BroadcastReceiver {
             context.startActivity(stopIntent);
             return;
         }
+
+        // Direct start loud audio alarm and repeating vibration!
+        AlarmHelper.startAlarm(context);
 
         // Acquire wake lock to wake the watch CPU and screen
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);

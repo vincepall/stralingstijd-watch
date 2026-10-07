@@ -319,22 +319,11 @@ public class MainActivity extends Activity {
     }
 
     private void startAlarmVibration() {
-        try {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                long[] pattern = {0, 400, 150, 400, 150, 600, 300};
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0)); // repeat
-                } else {
-                    vibrator.vibrate(pattern, 0);
-                }
-            }
-        } catch (Exception ignored) {}
+        AlarmHelper.startAlarm(this);
     }
 
     private void stopVibration() {
-        try {
-            if (vibrator != null) vibrator.cancel();
-        } catch (Exception ignored) {}
+        AlarmHelper.stopAlarm(this);
     }
 
     private int dp(float dp) {
