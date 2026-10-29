@@ -3,4 +3,6 @@
     <string name="app_name">Stralingstijd</string>
     <string name="tile_label">Stralingstijd</string>
     <string name="tile_description">Stralingstijd berekenen en timer starten</string>
+    <string name="complication_label">▶ Start Stralingstijd Timer</string>
+    <string name="quick_start_label">▶ Start Timer</string>
 </resources>

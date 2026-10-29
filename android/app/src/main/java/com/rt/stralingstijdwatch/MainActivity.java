@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     private String selectedFilm = "D4"; // "D4", "D5", "D7"
     private double materialFactor = 1.0;
     private MaterialDb.Material selectedMaterial = null;
+    private long manualTimeOverrideSeconds = 0; // >0 als gebruiker de tijd handmatig heeft gefinetuned
 
     // Root Containers
     private FrameLayout rootFrame;
@@ -221,6 +222,9 @@ public class MainActivity extends Activity {
         if (sp.contains("last_timer_factor")) {
             materialFactor = sp.getFloat("last_timer_factor", (float) materialFactor);
         }
+        if (sp.getBoolean("manual_time_override", false)) {
+            manualTimeOverrideSeconds = sp.getLong("last_timer_seconds", 0);
+        }
 
         rootFrame = new FrameLayout(this);
         rootFrame.setBackgroundColor(COLOR_BG);
@@ -285,10 +289,17 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         isForeground = true;
+        SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+        if (sp.getBoolean("manual_time_override", false)) {
+            manualTimeOverrideSeconds = sp.getLong("last_timer_seconds", 0);
+        } else {
+            manualTimeOverrideSeconds = 0;
+        }
         if (AlarmHelper.isAlarmRinging() || isAlarmRinging) {
             onTimerFinished();
         } else {
             checkAndRestoreTimer();
+            updateAllUI();
         }
     }
 
@@ -623,6 +634,7 @@ public class MainActivity extends Activity {
                     if (selectedMaterial != null) {
                         materialFactor = selectedMaterial.getFactor(currentSource.type);
                     }
+                    clearManualTimeOverride();
                     sourcePickerOverlay.setVisibility(View.GONE);
                     updateAllUI();
                 }
@@ -856,6 +868,7 @@ public class MainActivity extends Activity {
                 haptic(25);
                 selectedMaterial = null;
                 materialFactor = 1.0;
+                clearManualTimeOverride();
                 materialPickerOverlay.setVisibility(View.GONE);
                 updateAllUI();
             }
@@ -894,6 +907,7 @@ public class MainActivity extends Activity {
                     haptic(25);
                     selectedMaterial = mat;
                     materialFactor = factor;
+                    clearManualTimeOverride();
                     materialPickerOverlay.setVisibility(View.GONE);
                     updateAllUI();
                 }
@@ -922,6 +936,7 @@ public class MainActivity extends Activity {
                 @Override public void onClick(View v) {
                     haptic(15);
                     selectedFilm = filmName;
+                    clearManualTimeOverride();
                     updateAllUI();
                 }
             });
@@ -949,13 +964,23 @@ public class MainActivity extends Activity {
         tag.setGravity(Gravity.CENTER);
         card.addView(tag);
 
-        // Single Film Time Display
+        // Single Film Time Display (Tap to manually finetune time!)
         txtResultTime = new TextView(this);
         txtResultTime.setText("0m 00s");
         txtResultTime.setTextSize(34);
         txtResultTime.setTextColor(COLOR_TEXT_WHITE);
         txtResultTime.setTypeface(Typeface.DEFAULT_BOLD);
         txtResultTime.setGravity(Gravity.CENTER);
+        txtResultTime.setClickable(true);
+        txtResultTime.setFocusable(true);
+        txtResultTime.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                haptic(20);
+                saveCurrentCalculationToPrefs();
+                Intent intent = new Intent(MainActivity.this, TimeInputActivity.class);
+                startActivity(intent);
+            }
+        });
         card.addView(txtResultTime);
 
         // Subtitle info
@@ -963,6 +988,14 @@ public class MainActivity extends Activity {
         txtResultSub.setTextSize(10);
         txtResultSub.setTextColor(COLOR_TEXT_MUTED);
         txtResultSub.setGravity(Gravity.CENTER);
+        txtResultSub.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                haptic(20);
+                saveCurrentCalculationToPrefs();
+                Intent intent = new Intent(MainActivity.this, TimeInputActivity.class);
+                startActivity(intent);
+            }
+        });
         card.addView(txtResultSub);
 
         addSpace(card, dp(8));
@@ -1609,10 +1642,51 @@ public class MainActivity extends Activity {
         };
     }
 
+    private void clearManualTimeOverride() {
+        manualTimeOverrideSeconds = 0;
+        try {
+            SharedPreferences sp = getSharedPreferences("stralingstijd_prefs", Context.MODE_PRIVATE);
+            sp.edit().putBoolean("manual_time_override", false).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private void adjustRunningTimer(int deltaSec) {
+        if (!isTimerRunning && !isTimerPaused) return;
+        haptic(15);
+
+        if (isTimerPaused) {
+            timerRemainingSeconds = Math.max(1, timerRemainingSeconds + deltaSec);
+            timerTotalSeconds = Math.max(timerRemainingSeconds, timerTotalSeconds + deltaSec);
+            saveActiveTimerToPrefs(true, true, 0, timerTotalSeconds, timerRemainingSeconds, timerFilmName);
+            showOngoingTimerNotification();
+        } else {
+            long now = SystemClock.elapsedRealtime();
+            long curRem = Math.max(0, (timerTargetEndTime - now + 999) / 1000);
+            long newRem = Math.max(1, curRem + deltaSec);
+            timerRemainingSeconds = newRem;
+            timerTotalSeconds = Math.max(newRem, timerTotalSeconds + deltaSec);
+            timerTargetEndTime = now + (newRem * 1000L);
+            long targetEndTimeMs = System.currentTimeMillis() + (newRem * 1000L);
+
+            saveActiveTimerToPrefs(true, false, targetEndTimeMs, timerTotalSeconds, timerRemainingSeconds, timerFilmName);
+            scheduleAlarmManager(targetEndTimeMs);
+            showOngoingTimerNotification();
+            scheduleUserInactivityTimeout();
+        }
+        updateTimerUI();
+        updateBannerTimer();
+    }
+
     private void startCountdownForFilm(String film) {
-        double sec = calculateResultSecondsForFilm(film);
-        if (sec <= 0) return;
-        startCountdown(Math.round(sec), film);
+        long startSec;
+        if (manualTimeOverrideSeconds > 0) {
+            startSec = manualTimeOverrideSeconds;
+        } else {
+            double sec = calculateResultSecondsForFilm(film);
+            if (sec <= 0) return;
+            startSec = Math.round(sec);
+        }
+        startCountdown(startSec, film);
     }
 
     private void startCountdown(long seconds, String film) {
@@ -1663,16 +1737,21 @@ public class MainActivity extends Activity {
             ed.putInt("last_timer_ffd", ffd);
             ed.putFloat("last_timer_ci", (float) currentCi);
             ed.putFloat("last_timer_factor", (float) materialFactor);
-            ed.apply();
+            ed.commit();
 
-            TileService.getUpdater(this).requestUpdate(StralingstijdTileService.class);
+            AlarmHelper.requestExternalUpdates(this);
         } catch (Exception ignored) {}
     }
 
     private void saveCurrentCalculationToPrefs() {
         if (isTimerRunning) return;
-        double sec = calculateResultSecondsForFilm(selectedFilm);
-        long timerSec = sec > 0 ? Math.round(sec) : 120;
+        long timerSec;
+        if (manualTimeOverrideSeconds > 0) {
+            timerSec = manualTimeOverrideSeconds;
+        } else {
+            double sec = calculateResultSecondsForFilm(selectedFilm);
+            timerSec = sec > 0 ? Math.round(sec) : 120;
+        }
         saveLastUsedTimer(timerSec, selectedFilm);
     }
 
@@ -2143,6 +2222,7 @@ public class MainActivity extends Activity {
         if (numpadBuffer.isEmpty()) return;
         try {
             double v = Double.parseDouble(numpadBuffer);
+            clearManualTimeOverride();
             switch (numpadTarget) {
                 case TARGET_THICKNESS:
                     thickness = Math.max(0.1, v);
@@ -2212,12 +2292,14 @@ public class MainActivity extends Activity {
             setSegmentStyle(btnFilms[i], active);
         }
 
-        // 4. Result Card Calculation (Single selected film)
-        double sec = calculateResultSecondsForFilm(selectedFilm);
-        txtResultTime.setText(formatTime(sec));
+        // 4. Result Card Calculation (Single selected film or manual finetuned override)
+        double calcSec = calculateResultSecondsForFilm(selectedFilm);
+        double displaySec = (manualTimeOverrideSeconds > 0) ? manualTimeOverrideSeconds : calcSec;
+        txtResultTime.setText(formatTime(displaySec));
         String matInfo = Math.abs(materialFactor - 1.0) >= 0.005 ? String.format(Locale.US, " • Fac: %.2f", materialFactor) : "";
-        txtResultSub.setText(String.format(Locale.US, "%s Film • %s • %.1fmm • %dcm • %.1f Ci%s",
-                selectedFilm, currentSource.type, thickness, ffd, currentCi, matInfo));
+        String manualTag = (manualTimeOverrideSeconds > 0) ? " [Aangepast ✎]" : " (Tik op tijd om aan te passen ✎)";
+        txtResultSub.setText(String.format(Locale.US, "%s Film • %s • %.1fmm • %dcm • %.1f Ci%s%s",
+                selectedFilm, currentSource.type, thickness, ffd, currentCi, matInfo, manualTag));
 
         updateBannerTimer();
         saveCurrentCalculationToPrefs();

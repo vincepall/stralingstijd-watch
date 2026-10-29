@@ -13,7 +13,7 @@ import android.os.PowerManager;
 public class TimerAlarmReceiver extends BroadcastReceiver {
     public static final String ACTION_TIMER_ALARM = "com.rt.stralingstijdwatch.ACTION_TIMER_ALARM";
     public static final String ACTION_STOP_ALARM = "com.rt.stralingstijdwatch.ACTION_STOP_ALARM";
-    public static final String CHANNEL_ALARM_ID = "stralingstijd_alarm_channel";
+    public static final String CHANNEL_ALARM_ID = "stralingstijd_alarm_channel_v2";
     public static final int NOTIFICATION_ID = 2001;
 
     @Override
@@ -35,7 +35,7 @@ public class TimerAlarmReceiver extends BroadcastReceiver {
             return;
         }
 
-        // Direct start loud audio alarm and repeating vibration!
+        // Direct start loud audio alarm and controlled repeating vibration!
         AlarmHelper.startAlarm(context);
 
         // Acquire wake lock to wake the watch CPU and screen
@@ -65,16 +65,23 @@ public class TimerAlarmReceiver extends BroadcastReceiver {
         PendingIntent stopPendingIntent = PendingIntent.getBroadcast(context, 1003, stopIntent, flags);
 
         // Show High Priority Alarm Notification with FullScreenIntent
+        // Vibration is disabled on the notification channel itself so the system notification service
+        // cannot hold onto the vibrator after the user taps STOP ALARM.
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    nm.deleteNotificationChannel("stralingstijd_alarm_channel");
+                } catch (Exception ignored) {}
                 NotificationChannel channel = new NotificationChannel(
                         CHANNEL_ALARM_ID,
                         "Stralingstijd Alarm",
                         NotificationManager.IMPORTANCE_HIGH
                 );
                 channel.setDescription("Alarm wanneer stralingstijd is verstreken");
-                channel.enableVibration(true);
+                channel.enableVibration(false);
+                channel.setVibrationPattern(new long[]{0L});
+                channel.setSound(null, null);
                 channel.setBypassDnd(true);
                 nm.createNotificationChannel(channel);
             }

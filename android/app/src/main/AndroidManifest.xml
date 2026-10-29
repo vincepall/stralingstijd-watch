@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.rt.stralingstijdwatch"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -43,6 +43,30 @@
             </intent-filter>
         </activity>
 
+        <!-- Scherm om snel de tijd handmatig te finetunen vanaf de widget of de app -->
+        <activity
+            android:name=".TimeInputActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- Directe snelkoppeling om met 1 druk de timer te starten (voor App-snelkoppeling / Watchface knop) -->
+        <activity
+            android:name=".QuickStartActivity"
+            android:label="@string/quick_start_label"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Wear OS Widget / Tegel (Tile) -->
         <service
             android:name=".StralingstijdTileService"
             android:label="@string/tile_label"
@@ -53,6 +77,24 @@
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
             </intent-filter>
+        </service>
+
+        <!-- Wear OS Watchface Complicatie (start direct de ingestelde timer vanaf de wijzerplaat!) -->
+        <service
+            android:name=".TimerComplicationService"
+            android:label="@string/complication_label"
+            android:icon="@drawable/ic_complication_timer"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT,RANGED_VALUE,ICON,SMALL_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
         </service>
 
         <receiver

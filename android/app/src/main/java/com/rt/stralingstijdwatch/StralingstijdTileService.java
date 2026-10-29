@@ -17,7 +17,7 @@ import java.util.Locale;
 
 public class StralingstijdTileService extends TileService {
 
-    private static final String RESOURCES_VERSION = "3";
+    private static final String RESOURCES_VERSION = "4";
 
     @Override
     protected ListenableFuture<TileBuilders.Tile> onTileRequest(RequestBuilders.TileRequest requestParams) {
@@ -45,9 +45,22 @@ public class StralingstijdTileService extends TileService {
             formattedTime = String.format(Locale.US, "%02d:%02d", m, s);
         }
 
-        String subLabel = String.format(Locale.US, "%s • %s • %.1fmm", lastFilm, lastSource, lastThickness);
+        String subLabel = String.format(Locale.US, "%s • %s • %.1fmm ✎", lastFilm, lastSource, lastThickness);
 
-        // Action to open Stralingstijd app normally (Calculator)
+        // Action 1: Tapping the time opens TimeInputActivity to finetune the time directly!
+        ActionBuilders.LaunchAction editTimeAction = new ActionBuilders.LaunchAction.Builder()
+                .setAndroidActivity(new ActionBuilders.AndroidActivity.Builder()
+                        .setPackageName("com.rt.stralingstijdwatch")
+                        .setClassName("com.rt.stralingstijdwatch.TimeInputActivity")
+                        .build())
+                .build();
+
+        ModifiersBuilders.Clickable editTimeClickable = new ModifiersBuilders.Clickable.Builder()
+                .setId("edit_timer_time")
+                .setOnClick(editTimeAction)
+                .build();
+
+        // Action 2: Open Stralingstijd app normally (Calculator)
         ActionBuilders.LaunchAction openAppAction = new ActionBuilders.LaunchAction.Builder()
                 .setAndroidActivity(new ActionBuilders.AndroidActivity.Builder()
                         .setPackageName("com.rt.stralingstijdwatch")
@@ -60,7 +73,7 @@ public class StralingstijdTileService extends TileService {
                 .setOnClick(openAppAction)
                 .build();
 
-        // Action to start the last used timer immediately
+        // Action 3: Start the last used / finetuned timer immediately
         ActionBuilders.LaunchAction startTimerAction = new ActionBuilders.LaunchAction.Builder()
                 .setAndroidActivity(new ActionBuilders.AndroidActivity.Builder()
                         .setPackageName("com.rt.stralingstijdwatch")
@@ -78,27 +91,27 @@ public class StralingstijdTileService extends TileService {
         LayoutElementBuilders.Text titleText = new LayoutElementBuilders.Text.Builder()
                 .setText("STRALINGSTIJD")
                 .setFontStyle(new LayoutElementBuilders.FontStyle.Builder()
-                        .setSize(DimensionBuilders.sp(10))
+                        .setSize(DimensionBuilders.sp(9.5f))
                         .setColor(ColorBuilders.argb(0xFFF5DF4D)) // Accent Yellow
                         .setWeight(700)
                         .build())
                 .build();
 
-        // 2. Large Time Display (Calculated / last used time)
+        // 2. Large Time Display (Tapping allows manual finetuning)
         LayoutElementBuilders.Text timeDisplay = new LayoutElementBuilders.Text.Builder()
                 .setText(formattedTime)
                 .setFontStyle(new LayoutElementBuilders.FontStyle.Builder()
-                        .setSize(DimensionBuilders.sp(28))
+                        .setSize(DimensionBuilders.sp(26))
                         .setColor(ColorBuilders.argb(0xFFFFFFFF))
                         .setWeight(700)
                         .build())
                 .build();
 
-        // 3. Subtitle (Film & Source details)
+        // 3. Subtitle (Film & Source details + edit hint)
         LayoutElementBuilders.Text subText = new LayoutElementBuilders.Text.Builder()
                 .setText(subLabel)
                 .setFontStyle(new LayoutElementBuilders.FontStyle.Builder()
-                        .setSize(DimensionBuilders.sp(9.5f))
+                        .setSize(DimensionBuilders.sp(9))
                         .setColor(ColorBuilders.argb(0xFFAAAAAA)) // Muted Grey
                         .build())
                 .build();
@@ -106,39 +119,47 @@ public class StralingstijdTileService extends TileService {
         LayoutElementBuilders.Column timeInnerColumn = new LayoutElementBuilders.Column.Builder()
                 .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
                 .addContent(titleText)
-                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(1)).build())
                 .addContent(timeDisplay)
-                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(1)).build())
                 .addContent(subText)
                 .build();
 
         LayoutElementBuilders.Box timeCard = new LayoutElementBuilders.Box.Builder()
-                .setWidth(DimensionBuilders.dp(168))
+                .setWidth(DimensionBuilders.dp(158))
                 .setHeight(DimensionBuilders.wrap())
                 .setModifiers(new ModifiersBuilders.Modifiers.Builder()
-                        .setClickable(openAppClickable)
+                        .setBackground(new ModifiersBuilders.Background.Builder()
+                                .setColor(ColorBuilders.argb(0xFF161616))
+                                .setCorner(new ModifiersBuilders.Corner.Builder()
+                                        .setRadius(DimensionBuilders.dp(14))
+                                        .build())
+                                .build())
+                        .setPadding(new ModifiersBuilders.Padding.Builder()
+                                .setTop(DimensionBuilders.dp(4))
+                                .setBottom(DimensionBuilders.dp(4))
+                                .build())
+                        .setClickable(editTimeClickable)
                         .build())
                 .addContent(timeInnerColumn)
                 .build();
 
-        // 4. Action Button (Pill shaped with Start Timer)
+        // 4. Extra-large, easy-to-press Action Button (▶ START TIMER)
         LayoutElementBuilders.Text btnText = new LayoutElementBuilders.Text.Builder()
                 .setText("▶ START TIMER")
                 .setFontStyle(new LayoutElementBuilders.FontStyle.Builder()
-                        .setSize(DimensionBuilders.sp(12))
+                        .setSize(DimensionBuilders.sp(15))
                         .setColor(ColorBuilders.argb(0xFF000000))
                         .setWeight(700)
                         .build())
                 .build();
 
         LayoutElementBuilders.Box actionButton = new LayoutElementBuilders.Box.Builder()
-                .setWidth(DimensionBuilders.dp(148))
-                .setHeight(DimensionBuilders.dp(38))
+                .setWidth(DimensionBuilders.dp(168))
+                .setHeight(DimensionBuilders.dp(56))
                 .setModifiers(new ModifiersBuilders.Modifiers.Builder()
                         .setBackground(new ModifiersBuilders.Background.Builder()
                                 .setColor(ColorBuilders.argb(0xFFF5DF4D))
                                 .setCorner(new ModifiersBuilders.Corner.Builder()
-                                        .setRadius(DimensionBuilders.dp(19))
+                                        .setRadius(DimensionBuilders.dp(28))
                                         .build())
                                 .build())
                         .setClickable(startTimerClickable)
@@ -146,24 +167,24 @@ public class StralingstijdTileService extends TileService {
                 .addContent(btnText)
                 .build();
 
-        // 5. Bottom Hint / Link to calculator
+        // 5. Bottom Link to calculator
         LayoutElementBuilders.Text hintText = new LayoutElementBuilders.Text.Builder()
                 .setText("⚙ REKENMACHINE")
                 .setFontStyle(new LayoutElementBuilders.FontStyle.Builder()
                         .setSize(DimensionBuilders.sp(9))
-                        .setColor(ColorBuilders.argb(0xFF888888))
+                        .setColor(ColorBuilders.argb(0xFF999999))
                         .setWeight(700)
                         .build())
                 .build();
 
         LayoutElementBuilders.Box hintButton = new LayoutElementBuilders.Box.Builder()
-                .setWidth(DimensionBuilders.dp(140))
-                .setHeight(DimensionBuilders.dp(24))
+                .setWidth(DimensionBuilders.dp(134))
+                .setHeight(DimensionBuilders.dp(22))
                 .setModifiers(new ModifiersBuilders.Modifiers.Builder()
                         .setBackground(new ModifiersBuilders.Background.Builder()
                                 .setColor(ColorBuilders.argb(0xFF1E1E1E))
                                 .setCorner(new ModifiersBuilders.Corner.Builder()
-                                        .setRadius(DimensionBuilders.dp(12))
+                                        .setRadius(DimensionBuilders.dp(11))
                                         .build())
                                 .build())
                         .setClickable(openAppClickable)
@@ -176,15 +197,15 @@ public class StralingstijdTileService extends TileService {
                 .setWidth(DimensionBuilders.expand())
                 .setHeight(DimensionBuilders.expand())
                 .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
-                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(18)).build())
+                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(14)).build())
                 .addContent(timeCard)
-                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(8)).build())
+                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(7)).build())
                 .addContent(actionButton)
-                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(8)).build())
+                .addContent(new LayoutElementBuilders.Spacer.Builder().setHeight(DimensionBuilders.dp(6)).build())
                 .addContent(hintButton)
                 .build();
 
-        // Root Box - Pure container with background color, NO clickable modifier (avoids nested clickables crash)
+        // Root Box
         LayoutElementBuilders.Box rootBox = new LayoutElementBuilders.Box.Builder()
                 .setWidth(DimensionBuilders.expand())
                 .setHeight(DimensionBuilders.expand())

@@ -17,6 +17,7 @@ DIST_DIR="$PROJECT_ROOT/dist"
 OUT_APK="$DIST_DIR/stralingstijd-wear.apk"
 KEYSTORE="$PARENT_ROOT/focus-watch/tools/debug.keystore"
 WEAR_TILES_LIBS="$PARENT_ROOT/focus-watch/tools/wear-tiles-libs"
+LOCAL_LIBS="$PROJECT_ROOT/tools/libs"
 
 echo "=== Building Stralingstijd Wear OS APK for Google Pixel Watch 3 ==="
 
@@ -44,14 +45,14 @@ echo "[2/6] Linking package with aapt2..."
 echo "[3/6] Compiling Java code..."
 javac -source 8 -target 8 \
     -bootclasspath "$PLATFORM" \
-    -cp "$PLATFORM:$BUILD_DIR/gen:$WEAR_TILES_LIBS/*" \
+    -cp "$PLATFORM:$BUILD_DIR/gen:$WEAR_TILES_LIBS/*:$LOCAL_LIBS/*" \
     -d "$BUILD_DIR/classes" \
     $(find "$BUILD_DIR/gen" "$SRC/java" -name "*.java")
 
 # 4. Convert bytecode to Dalvik Executable (classes.dex)
 echo "[4/6] Converting bytecode to DEX with d8..."
 CLASS_FILES=$(find "$BUILD_DIR/classes" -name "*.class")
-"$BUILD_TOOLS/d8" --lib "$PLATFORM" --output "$BUILD_DIR/dex" $CLASS_FILES "$WEAR_TILES_LIBS"/*.jar
+"$BUILD_TOOLS/d8" --lib "$PLATFORM" --output "$BUILD_DIR/dex" $CLASS_FILES "$WEAR_TILES_LIBS"/*.jar "$LOCAL_LIBS"/*.jar
 
 # 5. Package classes.dex into APK
 echo "[5/6] Packaging APK..."
